@@ -9,6 +9,7 @@ The analysis is based on the divergence of the normalized image gradient, estima
 The method connects **differential geometry** with **aesthetic perception**.
 
 ## Repository structure
+
 geometry-of-emotion/
 ├── painting_curvature_field.py # Main script
 ├── figures/ # Generated curvature maps
