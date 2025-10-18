@@ -11,9 +11,9 @@ The method connects **differential geometry** with **aesthetic perception**.
 ## Repository structure
 
 geometry-of-emotion/
-├── painting_curvature_field.py # Main script
-├── figures/ # Generated curvature maps
-└── README.md
+├── painting_curvature_field.py # Main script for curvature computation and visualization
+├── figures/ # Folder containing generated curvature maps
+└── README.md 
 
 
 ## Usage
