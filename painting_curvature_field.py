@@ -80,7 +80,7 @@ def overlay_curvature_on_painting(title: str, image_path: str, curvature: np.nda
     plt.axis("off")
 
     cbar = plt.colorbar(im, orientation="horizontal", pad=0.03, fraction=0.046)
-    cbar.set_label(r"Curvature $|\kappa|$", fontsize=14)
+    cbar.set_label(r"Curvature $\kappa$", fontsize=14)
     cbar.ax.tick_params(labelsize=12, length=0)
     cbar.formatter.set_powerlimits((-2, 2))
     cbar.update_ticks()
