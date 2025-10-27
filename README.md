@@ -2,7 +2,8 @@
 
 This repository contains Python code for computing and visualizing **curvature fields in paintings**, exploring how mathematical geometry can reveal structural patterns of motion and emotion in visual art.
 
-This repository accompanies the research paper submitted to the *Journal of Mathematics and the Arts* (Oct 2025), titled **"The Geometry of Emotion: Curvature and Flow in Paintings."**
+This repository accompanies the research paper submitted to the *Journal of Mathematics and the Arts* (Oct 2025), titled **"How the sky bends: A differential-geometric
+reading of Van Gogh’s *The Starry Night*"**
 
 ## Overview
 The analysis is based on the divergence of the normalized image gradient, estimating local curvature values that describe flow and texture dynamics.  
