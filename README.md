@@ -24,26 +24,89 @@ kappa = (Ixx Iy^2 - 2 Ix Iy Ixy + Iyy Ix^2) /
 
 This is **level-set curvature of luminance contours**, not Gaussian curvature of the graph `z = I(x,y)`.
 
-A Gaussian scale-space is used with initial scales `sigma = {1, 2, 4, 8}` and the analysis will be repeated at several image resolutions.
+A Gaussian scale-space is used with initial scales `sigma = {1, 2, 4, 8}`. The main benchmark starts at longest-side resolution 512 px; robustness will then be checked at 256 and 1024 px.
 
-## Planned ablation study
+## Corpus layout
+
+The extraction script expects one folder per artist. The existing Kaggle corpus used in the exploratory notebook follows this pattern.
+
+```text
+training/
+├── VanGogh/
+├── Monet/
+├── Cezanne/
+└── ...
+
+validation/
+├── VanGogh/
+├── Monet/
+├── Cezanne/
+└── ...
+```
+
+## Step 1 — extract features
+
+From the repository root:
+
+```bash
+python scripts/extract_corpus_features.py \
+  --root /path/to/training \
+  --output results/features_train_geometry.csv \
+  --long-side 512 \
+  --sigmas 1 2 4 8
+
+python scripts/extract_corpus_features.py \
+  --root /path/to/validation \
+  --output results/features_test_geometry.csv \
+  --long-side 512 \
+  --sigmas 1 2 4 8
+```
+
+Each output row corresponds to one painting and contains four feature families identified by prefixes:
+
+- `edge__`: gradient magnitude and edge-density baselines;
+- `texture__`: GLCM texture descriptors;
+- `orient__`: structure-tensor coherence/orientation descriptors;
+- `curv__`: multiscale level-set curvature summaries.
+
+## Step 2 — ablation experiment
+
+```bash
+python scripts/run_ablation.py \
+  --train results/features_train_geometry.csv \
+  --test results/features_test_geometry.csv \
+  --output results/ablation_results.csv
+```
+
+The first benchmark uses the same fixed train/validation partition as the exploratory notebook and an RBF-SVM with standardized features. Macro-F1 is accompanied by a nonparametric bootstrap 95% confidence interval.
+
+## Ablation study
 
 | Experiment | Features |
 |---|---|
-| E0 | Random / majority baseline |
 | E1 | Gradient and edge descriptors |
 | E2 | GLCM texture |
 | E3 | Multiscale curvature only |
 | E4 | Curvature + structure-tensor geometry |
-| E5 | Texture + edges + geometry |
+| E5 | Edge + texture baseline |
+| E6 | Edge + texture + curvature + orientation |
 
-The key quantity is the out-of-sample improvement in macro-F1 of E5 relative to the conventional baseline E1+E2.
+The principal quantity is
+
+```text
+Delta macro-F1 = macro-F1(E6) - macro-F1(E5)
+```
+
+A positive and stable gain motivates the interpretation that geometry contributes information not already contained in conventional edge/texture descriptors. If the gain is negligible, the project moves toward intra-artist geometric characterization and outlier analysis rather than claiming improved artist classification.
 
 ## Repository structure
 
 ```text
 painting-geometry/
 ├── painting_curvature_field.py      # original single-painting analysis (preserved)
+├── scripts/
+│   ├── extract_corpus_features.py   # corpus-wide feature extraction
+│   └── run_ablation.py              # controlled feature-family comparison
 ├── src/
 │   ├── preprocessing.py             # image loading, BT.601 luminance, resolutions
 │   ├── curvature.py                 # multiscale level-set curvature
@@ -51,18 +114,19 @@ painting-geometry/
 │   ├── baselines.py                 # edge and GLCM baselines
 │   └── statistics.py                # Kruskal-Wallis, FDR, bootstrap, stability
 ├── figures/
+├── results/
 └── README.md
 ```
 
 ## Immediate milestone
 
-Produce a reproducible comparison of:
+Produce and inspect the following table before drafting the manuscript:
 
 ```text
-Edges | Texture | Curvature | Geometry | Texture + Geometry
+experiment | n_features | accuracy | macro_f1 | 95% CI
 ```
 
-using the same train/test split and reporting macro-F1 with uncertainty. If geometry adds stable information, the analysis proceeds to corpus-level inference and a dedicated *Starry Night* outlier analysis.
+The go/no-go result is whether E6 improves meaningfully over E5. The next stages are resolution robustness, artist-wise inferential statistics, and finally positioning *The Starry Night* within Van Gogh's corpus.
 
 ## Legacy analysis
 
