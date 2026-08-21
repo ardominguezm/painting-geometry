@@ -26,6 +26,28 @@ This is **level-set curvature of luminance contours**, not Gaussian curvature of
 
 A Gaussian scale-space is used with initial scales `sigma = {1, 2, 4, 8}`. The main benchmark starts at longest-side resolution 512 px; robustness will then be checked at 256 and 1024 px.
 
+## Fastest route — Google Colab
+
+Open and run:
+
+```text
+notebooks/01_corpus_ablation_colab.ipynb
+```
+
+The notebook is end-to-end. It:
+
+1. clones the `multiscale-corpus-analysis` branch;
+2. downloads `delayedkarma/impressionist-classifier-data` through `kagglehub`;
+3. audits train/validation artist counts;
+4. extracts edge, GLCM texture, structure-tensor, and multiscale curvature descriptors;
+5. performs Kruskal-Wallis screening of curvature features with Benjamini-Hochberg FDR;
+6. runs the controlled E1-E6 ablation study;
+7. computes a paired class-stratified bootstrap confidence interval for `Macro-F1(E6) - Macro-F1(E5)`;
+8. produces the main Macro-F1 figure, per-artist F1 comparison, and normalized confusion matrices;
+9. packages all outputs in a ZIP for manuscript inspection.
+
+Do not aggressively tune the classifier before inspecting this first ablation result. The purpose of this experiment is to test whether geometry contributes incremental information under a controlled comparison.
+
 ## Corpus layout
 
 The extraction script expects one folder per artist. The existing Kaggle corpus used in the exploratory notebook follows this pattern.
@@ -78,7 +100,15 @@ python scripts/run_ablation.py \
   --output results/ablation_results.csv
 ```
 
-The first benchmark uses the same fixed train/validation partition as the exploratory notebook and an RBF-SVM with standardized features. Macro-F1 is accompanied by a nonparametric bootstrap 95% confidence interval.
+The first benchmark uses the same fixed train/validation partition as the exploratory notebook and an RBF-SVM with standardized features. Macro-F1 uncertainty is estimated with a class-stratified bootstrap. The E6 versus E5 increment is evaluated with a paired class-stratified bootstrap, which preserves class support in every resample.
+
+The script writes:
+
+```text
+results/ablation_results.csv
+results/ablation_predictions.csv
+results/ablation_delta.csv
+```
 
 ## Ablation study
 
@@ -97,13 +127,21 @@ The principal quantity is
 Delta macro-F1 = macro-F1(E6) - macro-F1(E5)
 ```
 
-A positive and stable gain motivates the interpretation that geometry contributes information not already contained in conventional edge/texture descriptors. If the gain is negligible, the project moves toward intra-artist geometric characterization and outlier analysis rather than claiming improved artist classification.
+A positive point estimate is not sufficient by itself. The initial decision rule is:
+
+- **GO:** paired 95% bootstrap CI for Delta macro-F1 lies entirely above zero;
+- **BORDERLINE:** point estimate is positive but CI overlaps zero;
+- **PIVOT:** effect is negligible or negative.
+
+A GO result motivates the claim that geometry contributes information not already contained in the specified edge/texture baseline. A BORDERLINE or PIVOT result redirects the paper toward corpus-level geometric characterization, scale robustness, and within-artist/outlier analysis rather than improved artist classification.
 
 ## Repository structure
 
 ```text
 painting-geometry/
 ├── painting_curvature_field.py      # original single-painting analysis (preserved)
+├── notebooks/
+│   └── 01_corpus_ablation_colab.ipynb
 ├── scripts/
 │   ├── extract_corpus_features.py   # corpus-wide feature extraction
 │   └── run_ablation.py              # controlled feature-family comparison
@@ -115,18 +153,25 @@ painting-geometry/
 │   └── statistics.py                # Kruskal-Wallis, FDR, bootstrap, stability
 ├── figures/
 ├── results/
+├── requirements.txt
 └── README.md
 ```
 
 ## Immediate milestone
 
-Produce and inspect the following table before drafting the manuscript:
+Produce and inspect:
 
 ```text
 experiment | n_features | accuracy | macro_f1 | 95% CI
 ```
 
-The go/no-go result is whether E6 improves meaningfully over E5. The next stages are resolution robustness, artist-wise inferential statistics, and finally positioning *The Starry Night* within Van Gogh's corpus.
+and, separately:
+
+```text
+Delta Macro-F1 (E6-E5) | paired 95% CI | bootstrap proportion Delta <= 0
+```
+
+The next stages are resolution robustness, scale-specific ablation, artist-wise inferential statistics, and finally positioning *The Starry Night* within Van Gogh's corpus.
 
 ## Legacy analysis
 
