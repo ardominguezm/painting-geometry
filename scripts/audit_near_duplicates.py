@@ -52,8 +52,6 @@ def hash_record(split: str, artist: str, path: Path) -> dict:
         'sha1': sha1_file(path),
         'phash': str(ph),
         'dhash': str(dh),
-        'phash_u64': np.uint64(int(str(ph), 16)),
-        'dhash_u64': np.uint64(int(str(dh), 16)),
     }
 
 
@@ -74,8 +72,6 @@ def compute_hash_table(split: str, root: Path) -> pd.DataFrame:
                 'sha1': None,
                 'phash': None,
                 'dhash': None,
-                'phash_u64': np.nan,
-                'dhash_u64': np.nan,
                 'error': repr(exc),
             })
     return pd.DataFrame(records)
@@ -88,6 +84,10 @@ def hamming_matrix(a: np.ndarray, b: np.ndarray) -> np.ndarray:
     xor = np.bitwise_xor(a[:, None], b[None, :])
     byte_view = xor.view(np.uint8).reshape(xor.shape + (8,))
     return _POPCOUNT_LUT[byte_view].sum(axis=-1).astype(np.uint8)
+
+
+def _hex_series_to_u64(series: pd.Series) -> np.ndarray:
+    return np.array([int(str(x), 16) for x in series], dtype=np.uint64)
 
 
 def find_cross_split_candidates(
@@ -103,16 +103,16 @@ def find_cross_split_candidates(
     threshold. Automatic exclusion is deliberately more conservative and is
     performed later using both distances simultaneously.
     """
-    tr = train_df.dropna(subset=['phash_u64', 'dhash_u64']).reset_index(drop=True)
-    te = test_df.dropna(subset=['phash_u64', 'dhash_u64']).reset_index(drop=True)
-    train_ph = tr['phash_u64'].astype('uint64').to_numpy()
-    train_dh = tr['dhash_u64'].astype('uint64').to_numpy()
+    tr = train_df.dropna(subset=['phash', 'dhash']).reset_index(drop=True)
+    te = test_df.dropna(subset=['phash', 'dhash']).reset_index(drop=True)
+    train_ph = _hex_series_to_u64(tr['phash'])
+    train_dh = _hex_series_to_u64(tr['dhash'])
 
     rows = []
     for start in tqdm(range(0, len(te), chunk_size), desc='Cross-split similarity', dynamic_ncols=True):
         block = te.iloc[start:start + chunk_size]
-        test_ph = block['phash_u64'].astype('uint64').to_numpy()
-        test_dh = block['dhash_u64'].astype('uint64').to_numpy()
+        test_ph = _hex_series_to_u64(block['phash'])
+        test_dh = _hex_series_to_u64(block['dhash'])
         pdist = hamming_matrix(test_ph, train_ph)
         ddist = hamming_matrix(test_dh, train_dh)
         ii, jj = np.where((pdist <= phash_threshold) | (ddist <= dhash_threshold))
