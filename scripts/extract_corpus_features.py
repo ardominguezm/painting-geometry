@@ -1,9 +1,18 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 
-import numpy as np
+# When this file is executed as
+#     python scripts/extract_corpus_features.py
+# Python places ``scripts/`` rather than the repository root on sys.path.
+# Add the repository root explicitly so imports from ``src`` work in Colab
+# and in ordinary command-line execution.
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
 import pandas as pd
 from tqdm import tqdm
 
@@ -16,6 +25,8 @@ IMAGE_EXTS = {'.jpg', '.jpeg', '.png', '.tif', '.tiff', '.bmp'}
 
 
 def discover_images(root: Path):
+    if not root.exists():
+        raise FileNotFoundError(f'Corpus root does not exist: {root}')
     for artist_dir in sorted(p for p in root.iterdir() if p.is_dir()):
         artist = artist_dir.name
         for path in sorted(artist_dir.rglob('*')):
@@ -53,6 +64,11 @@ def run(root: Path, output: Path, long_side: int, sigmas: tuple[float, ...]):
     if not items:
         raise RuntimeError(f'No images found under {root}')
 
+    print(f'Corpus root: {root}')
+    print(f'Images discovered: {len(items)}')
+    print(f'Resolution (long side): {long_side}')
+    print(f'Curvature scales: {sigmas}')
+
     rows = []
     failures = []
     for artist, path in tqdm(items, desc=f'Extracting {root.name}'):
@@ -61,14 +77,23 @@ def run(root: Path, output: Path, long_side: int, sigmas: tuple[float, ...]):
         except Exception as exc:
             failures.append({'artist': artist, 'path': str(path), 'error': repr(exc)})
 
-    df = pd.DataFrame(rows)
     output.parent.mkdir(parents=True, exist_ok=True)
-    df.to_csv(output, index=False)
 
     if failures:
         fail_path = output.with_name(output.stem + '_failures.csv')
         pd.DataFrame(failures).to_csv(fail_path, index=False)
         print(f'Warning: {len(failures)} failures written to {fail_path}')
+        for failure in failures[:5]:
+            print('  sample failure:', failure)
+
+    if not rows:
+        raise RuntimeError(
+            'Feature extraction failed for every image. '
+            'Inspect the failures CSV and the sample errors printed above.'
+        )
+
+    df = pd.DataFrame(rows)
+    df.to_csv(output, index=False)
 
     print(f'Saved {len(df)} rows x {df.shape[1]} columns to {output}')
     print('Artists:', sorted(df['artist'].unique().tolist()))
