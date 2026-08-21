@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+
+# Recomputable large/intermediate analysis products
+results/features_train_multiscale.csv
+results/features_test_multiscale.csv
+results/strong_baseline_train.csv
+results/strong_baseline_test.csv
+results/*_failures.csv
+results/phase2_leakage/train_hashes.csv
+results/phase2_leakage/test_hashes.csv
+
+# Local datasets and environments
+data/
+.venv/
+venv/
