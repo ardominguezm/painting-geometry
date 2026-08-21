@@ -15,7 +15,7 @@ The central hypotheses are:
 
 ## Geometry
 
-For luminance field `I(x,y)`, the signed curvature of its level sets is computed as
+For luminance field `I(x,y)`, the signed curvature of its level sets is
 
 ```text
 kappa = (Ixx Iy^2 - 2 Ix Iy Ixy + Iyy Ix^2) /
@@ -24,7 +24,9 @@ kappa = (Ixx Iy^2 - 2 Ix Iy Ixy + Iyy Ix^2) /
 
 This is **level-set curvature of luminance contours**, not Gaussian curvature of the graph `z = I(x,y)`.
 
-A Gaussian scale-space is used with `sigma = {1, 2, 4, 8}`. The principal corpus benchmark uses longest-side resolution 512 px; resolution robustness is a later analysis.
+The principal corpus benchmark uses longest-side resolution 512 px and scales `sigma = {1, 2, 4, 8}`.
+
+---
 
 ## Phase I — corpus ablation
 
@@ -36,16 +38,6 @@ notebooks/01_corpus_ablation_colab.ipynb
 
 Phase I establishes the initial signal by comparing edges, compact GLCM texture, multiscale curvature, structure-tensor geometry, and their combination on the fixed training/validation split.
 
-The first benchmark writes:
-
-```text
-results/ablation_results.csv
-results/ablation_predictions.csv
-results/ablation_delta.csv
-```
-
-The Phase-I experiments are:
-
 | Experiment | Features |
 |---|---|
 | E1 | Gradient and edge descriptors |
@@ -55,7 +47,7 @@ The Phase-I experiments are:
 | E5 | Edge + texture baseline |
 | E6 | Edge + texture + curvature + orientation |
 
-The principal Phase-I quantity is
+The principal quantity is
 
 ```text
 Delta macro-F1 = macro-F1(E6) - macro-F1(E5)
@@ -63,39 +55,29 @@ Delta macro-F1 = macro-F1(E6) - macro-F1(E5)
 
 Macro-F1 uncertainty is estimated with a class-stratified bootstrap and the E6-E5 increment with a paired class-stratified bootstrap.
 
+---
+
 ## Phase II — leakage audit and stronger controlled baseline
 
 Open directly in Colab:
 
 https://colab.research.google.com/github/ardominguezm/painting-geometry/blob/multiscale-corpus-analysis/notebooks/02_phase2_leakage_strong_baseline_colab.ipynb
 
-Phase II is designed to address the main methodological objections that remain after a positive Phase-I result. It **reuses the 512 px Phase-I curvature matrices** rather than recomputing them.
+Phase II addresses the main reviewer-facing controls after a positive Phase-I result. It **reuses the 512 px Phase-I curvature matrices** rather than recomputing them.
 
 It performs four controls:
 
-1. **Cross-split leakage audit.** Raw-byte SHA1, perceptual hash (pHash), and difference hash (dHash) are computed for all training and validation images. A permissive candidate list is generated for manual inspection, while the main clean evaluation excludes only exact matches or pairs satisfying both conservative pHash and dHash thresholds.
-2. **Stronger conventional baseline.** The legacy image-wise 75th-percentile edge density is not used as the main Phase-II edge descriptor because it is nearly constant by construction. The replacement baseline contains multiscale gradient statistics, non-degenerate fixed-relative edge densities, HOG-like global orientation statistics, multi-distance GLCM descriptors, and uniform LBP histograms.
-3. **Training-only model selection.** RBF-SVM `C` and `gamma` are selected by stratified cross-validation using only the training split. Validation images do not participate in hyperparameter selection.
-4. **Controlled dimensionality.** In addition to full-feature models, the conventional baseline and geometry-augmented model are compared after `SelectKBest` inside the training pipeline with the same requested dimensionality (`k=40` by default).
+1. **Cross-split leakage audit.** SHA1, pHash, and dHash identify exact and perceptually similar train/validation images. Main clean evaluation excludes exact matches or pairs satisfying both conservative pHash and dHash criteria.
+2. **Stronger conventional baseline.** The legacy image-wise 75th-percentile edge density is not used as the main Phase-II edge descriptor because it is nearly constant by construction. The replacement baseline includes multiscale gradient statistics, non-degenerate edge densities, HOG-like orientation summaries, multi-distance GLCM descriptors, and uniform LBP histograms.
+3. **Training-only model selection.** RBF-SVM `C` and `gamma` are selected by stratified cross-validation using only training data.
+4. **Controlled dimensionality.** Conventional and geometry-augmented models are compared after training-only `SelectKBest` with the same requested dimensionality (`k=40` by default).
 
-The principal Phase-II comparisons are:
-
-| Model | Meaning |
-|---|---|
-| `B_strong_full` | stronger conventional appearance baseline |
-| `G_geometry_full` | curvature + structure-tensor geometry |
-| `BG_combined_full` | strong baseline + geometry |
-| `B_strong_k40` | conventional baseline after training-only selection to 40 features |
-| `BG_combined_k40` | combined model after training-only selection to 40 features |
-
-The two most important paired contrasts are:
+Principal contrasts:
 
 ```text
 BG_combined_full - B_strong_full
 BG_combined_k40  - B_strong_k40
 ```
-
-Both are reported on the raw validation split and on the leakage-clean validation subset. The notebook also evaluates sensitivity to near-duplicate thresholds 0, 2, 4, and 6 without refitting the models.
 
 ### Phase-II scripts
 
@@ -105,24 +87,110 @@ scripts/extract_strong_baseline_features.py
 scripts/run_phase2_experiments.py
 ```
 
-### Phase-II outputs
+---
 
-The notebook creates lightweight scientific outputs such as:
+## Phase III — geometry interpretation and robustness
+
+Open directly in Colab:
+
+https://colab.research.google.com/github/ardominguezm/painting-geometry/blob/multiscale-corpus-analysis/notebooks/03_phase3_geometry_interpretation_colab.ipynb
+
+Phase III deliberately stops optimizing classification performance and asks what the geometric signal means computationally.
+
+It contains four analyses.
+
+### 1. Scale anatomy
+
+The existing Phase-I 512 px feature matrices are reused to compare:
 
 ```text
-results/phase2/phase2_results.csv
-results/phase2/phase2_deltas.csv
-results/phase2/phase2_metadata.csv
-results/phase2/phase2_selected_features.csv
-results/phase2/phase2_per_artist_f1.csv
-results/phase2/leakage_threshold_sensitivity.csv
-results/phase2/Figure_phase2_macroF1.png
-results/phase2_leakage/leakage_audit_summary.csv
-results/phase2_leakage/cross_split_near_duplicates.csv
-results/phase2_leakage/near_duplicate_contact_sheet.jpg
+sigma = 1
+sigma = 2
+sigma = 4
+sigma = 8
+{1,2}, {2,4}, {4,8}
+{1,2,4}, {2,4,8}
+{1,2,4,8}
+{1,2,4,8} + orientation
 ```
 
-Large regenerable matrices and hash caches are excluded from version control through `.gitignore`.
+Single-scale models have the same number of curvature variables. Hyperparameters are selected using training CV only. The best single scale is selected by **training CV**, not validation performance.
+
+Script:
+
+```text
+scripts/run_scale_ablation.py
+```
+
+### 2. Resolution robustness with scale-normalized curvature
+
+Resolution robustness is not evaluated by naively using the same smoothing radius in pixels. Phase III introduces a separate publication-grade implementation in
+
+```text
+src/curvature_v2.py
+```
+
+using true derivative-of-Gaussian derivatives. For a reference scale defined at 512 px,
+
+```text
+sigma_px(R) = sigma_ref * R / 512
+```
+
+and the dimensionless scale-normalized curvature is
+
+```text
+kappa_tilde = sigma_px * kappa
+```
+
+Thus 256, 512, and 1024 px images are compared at matched **relative spatial scales**. Stability is summarized using pairwise Spearman correlations, ICC(3,1), and robust median drift.
+
+The Phase-I implementation is preserved unchanged for reproducibility. `curvature_v2` is used only for the explicit resolution-robustness layer so earlier results are not silently redefined.
+
+Script:
+
+```text
+scripts/run_resolution_robustness.py
+```
+
+### 3. Artist-wise geometric structure
+
+The clean corpus is analyzed using:
+
+- Kruskal-Wallis tests;
+- Benjamini-Hochberg FDR;
+- Kruskal-Wallis epsilon-squared effect size;
+- pairwise Mann-Whitney tests for the strongest descriptors;
+- rank-biserial pairwise effect sizes.
+
+The emphasis is on **effect sizes and geometric profiles**, not extremely small p-values alone.
+
+Script:
+
+```text
+scripts/analyze_artist_geometry.py
+```
+
+### 4. Positioning *The Starry Night* within Van Gogh
+
+A reliable reproduction of *The Starry Night* can be uploaded to the Phase-III notebook and processed with the same 512 px Phase-I geometry used by the corpus benchmark.
+
+The analysis reports:
+
+- robust multivariate distance from the Van Gogh median geometry;
+- its percentile within the clean Van Gogh reference corpus;
+- nearest corpus neighbors;
+- per-feature percentiles and robust z-scores;
+- a 2D PCA visualization.
+
+This is a descriptive within-corpus analysis, **not** an authenticity, emotion, perception, or intention score.
+
+Script:
+
+```text
+scripts/position_starry_night.py
+```
+
+---
 
 ## Corpus layout
 
@@ -172,16 +240,22 @@ painting-geometry/
 ├── painting_curvature_field.py
 ├── notebooks/
 │   ├── 01_corpus_ablation_colab.ipynb
-│   └── 02_phase2_leakage_strong_baseline_colab.ipynb
+│   ├── 02_phase2_leakage_strong_baseline_colab.ipynb
+│   └── 03_phase3_geometry_interpretation_colab.ipynb
 ├── scripts/
 │   ├── extract_corpus_features.py
 │   ├── run_ablation.py
 │   ├── audit_near_duplicates.py
 │   ├── extract_strong_baseline_features.py
-│   └── run_phase2_experiments.py
+│   ├── run_phase2_experiments.py
+│   ├── run_scale_ablation.py
+│   ├── run_resolution_robustness.py
+│   ├── analyze_artist_geometry.py
+│   └── position_starry_night.py
 ├── src/
 │   ├── preprocessing.py
 │   ├── curvature.py
+│   ├── curvature_v2.py
 │   ├── orientation.py
 │   ├── baselines.py
 │   └── statistics.py
@@ -196,9 +270,18 @@ painting-geometry/
 
 A positive classification result is treated as evidence that the specified descriptors contain artist-discriminative information, not as evidence of emotion, intention, perception, authenticity, or causal artistic mechanisms. Psychological or affective claims are outside the scope of this computational analysis.
 
-## Next scientific stages
+## Current scientific logic
 
-If the Phase-II gain remains positive after leakage cleaning, stronger baselines, hyperparameter control, and matched dimensionality, the project proceeds to resolution robustness, scale-specific ablation, artist-wise effect-size analysis, and finally positioning *The Starry Night* within Van Gogh's corpus.
+The project now follows the sequence:
+
+```text
+Phase I   -> Is there geometric signal?
+Phase II  -> Does it survive stronger baselines, leakage control, and matched dimensionality?
+Phase III -> At which scales does it live, is it resolution-stable, how does it vary by artist,
+             and where does The Starry Night sit within Van Gogh?
+```
+
+Only after Phase III should the main manuscript claims and final figure set be frozen.
 
 ## Legacy analysis
 
