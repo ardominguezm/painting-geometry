@@ -9,7 +9,7 @@ Does multiscale level-set curvature provide independent, interpretable informati
 The central hypotheses are:
 
 1. curvature statistics differ systematically across artists;
-2. curvature adds information beyond edge and GLCM texture baselines;
+2. curvature adds information beyond conventional appearance descriptors;
 3. geometric descriptors are stable across image resolution and smoothing scale;
 4. *The Starry Night* can be located quantitatively within the distribution of Van Gogh's oeuvre rather than treated as an isolated exemplar.
 
@@ -24,33 +24,109 @@ kappa = (Ixx Iy^2 - 2 Ix Iy Ixy + Iyy Ix^2) /
 
 This is **level-set curvature of luminance contours**, not Gaussian curvature of the graph `z = I(x,y)`.
 
-A Gaussian scale-space is used with initial scales `sigma = {1, 2, 4, 8}`. The main benchmark starts at longest-side resolution 512 px; robustness will then be checked at 256 and 1024 px.
+A Gaussian scale-space is used with `sigma = {1, 2, 4, 8}`. The principal corpus benchmark uses longest-side resolution 512 px; resolution robustness is a later analysis.
 
-## Fastest route — Google Colab
+## Phase I — corpus ablation
 
-Open and run:
+Open:
 
 ```text
 notebooks/01_corpus_ablation_colab.ipynb
 ```
 
-The notebook is end-to-end. It:
+Phase I establishes the initial signal by comparing edges, compact GLCM texture, multiscale curvature, structure-tensor geometry, and their combination on the fixed training/validation split.
 
-1. clones the `multiscale-corpus-analysis` branch;
-2. downloads `delayedkarma/impressionist-classifier-data` through `kagglehub`;
-3. audits train/validation artist counts;
-4. extracts edge, GLCM texture, structure-tensor, and multiscale curvature descriptors;
-5. performs Kruskal-Wallis screening of curvature features with Benjamini-Hochberg FDR;
-6. runs the controlled E1-E6 ablation study;
-7. computes a paired class-stratified bootstrap confidence interval for `Macro-F1(E6) - Macro-F1(E5)`;
-8. produces the main Macro-F1 figure, per-artist F1 comparison, and normalized confusion matrices;
-9. packages all outputs in a ZIP for manuscript inspection.
+The first benchmark writes:
 
-Do not aggressively tune the classifier before inspecting this first ablation result. The purpose of this experiment is to test whether geometry contributes incremental information under a controlled comparison.
+```text
+results/ablation_results.csv
+results/ablation_predictions.csv
+results/ablation_delta.csv
+```
+
+The Phase-I experiments are:
+
+| Experiment | Features |
+|---|---|
+| E1 | Gradient and edge descriptors |
+| E2 | Compact GLCM texture |
+| E3 | Multiscale curvature only |
+| E4 | Curvature + structure-tensor geometry |
+| E5 | Edge + texture baseline |
+| E6 | Edge + texture + curvature + orientation |
+
+The principal Phase-I quantity is
+
+```text
+Delta macro-F1 = macro-F1(E6) - macro-F1(E5)
+```
+
+Macro-F1 uncertainty is estimated with a class-stratified bootstrap and the E6-E5 increment with a paired class-stratified bootstrap.
+
+## Phase II — leakage audit and stronger controlled baseline
+
+Open directly in Colab:
+
+https://colab.research.google.com/github/ardominguezm/painting-geometry/blob/multiscale-corpus-analysis/notebooks/02_phase2_leakage_strong_baseline_colab.ipynb
+
+Phase II is designed to address the main methodological objections that remain after a positive Phase-I result. It **reuses the 512 px Phase-I curvature matrices** rather than recomputing them.
+
+It performs four controls:
+
+1. **Cross-split leakage audit.** Raw-byte SHA1, perceptual hash (pHash), and difference hash (dHash) are computed for all training and validation images. A permissive candidate list is generated for manual inspection, while the main clean evaluation excludes only exact matches or pairs satisfying both conservative pHash and dHash thresholds.
+2. **Stronger conventional baseline.** The legacy image-wise 75th-percentile edge density is not used as the main Phase-II edge descriptor because it is nearly constant by construction. The replacement baseline contains multiscale gradient statistics, non-degenerate fixed-relative edge densities, HOG-like global orientation statistics, multi-distance GLCM descriptors, and uniform LBP histograms.
+3. **Training-only model selection.** RBF-SVM `C` and `gamma` are selected by stratified cross-validation using only the training split. Validation images do not participate in hyperparameter selection.
+4. **Controlled dimensionality.** In addition to full-feature models, the conventional baseline and geometry-augmented model are compared after `SelectKBest` inside the training pipeline with the same requested dimensionality (`k=40` by default).
+
+The principal Phase-II comparisons are:
+
+| Model | Meaning |
+|---|---|
+| `B_strong_full` | stronger conventional appearance baseline |
+| `G_geometry_full` | curvature + structure-tensor geometry |
+| `BG_combined_full` | strong baseline + geometry |
+| `B_strong_k40` | conventional baseline after training-only selection to 40 features |
+| `BG_combined_k40` | combined model after training-only selection to 40 features |
+
+The two most important paired contrasts are:
+
+```text
+BG_combined_full - B_strong_full
+BG_combined_k40  - B_strong_k40
+```
+
+Both are reported on the raw validation split and on the leakage-clean validation subset. The notebook also evaluates sensitivity to near-duplicate thresholds 0, 2, 4, and 6 without refitting the models.
+
+### Phase-II scripts
+
+```text
+scripts/audit_near_duplicates.py
+scripts/extract_strong_baseline_features.py
+scripts/run_phase2_experiments.py
+```
+
+### Phase-II outputs
+
+The notebook creates lightweight scientific outputs such as:
+
+```text
+results/phase2/phase2_results.csv
+results/phase2/phase2_deltas.csv
+results/phase2/phase2_metadata.csv
+results/phase2/phase2_selected_features.csv
+results/phase2/phase2_per_artist_f1.csv
+results/phase2/leakage_threshold_sensitivity.csv
+results/phase2/Figure_phase2_macroF1.png
+results/phase2_leakage/leakage_audit_summary.csv
+results/phase2_leakage/cross_split_near_duplicates.csv
+results/phase2_leakage/near_duplicate_contact_sheet.jpg
+```
+
+Large regenerable matrices and hash caches are excluded from version control through `.gitignore`.
 
 ## Corpus layout
 
-The extraction script expects one folder per artist. The existing Kaggle corpus used in the exploratory notebook follows this pattern.
+The extraction scripts expect one folder per artist:
 
 ```text
 training/
@@ -66,112 +142,63 @@ validation/
 └── ...
 ```
 
-## Step 1 — extract features
-
-From the repository root:
+## Phase-I command-line extraction
 
 ```bash
 python scripts/extract_corpus_features.py \
   --root /path/to/training \
-  --output results/features_train_geometry.csv \
+  --output results/features_train_multiscale.csv \
   --long-side 512 \
   --sigmas 1 2 4 8
 
 python scripts/extract_corpus_features.py \
   --root /path/to/validation \
-  --output results/features_test_geometry.csv \
+  --output results/features_test_multiscale.csv \
   --long-side 512 \
   --sigmas 1 2 4 8
 ```
 
-Each output row corresponds to one painting and contains four feature families identified by prefixes:
+Each Phase-I row contains four explicitly namespaced feature families:
 
-- `edge__`: gradient magnitude and edge-density baselines;
-- `texture__`: GLCM texture descriptors;
+- `edge__`: legacy gradient/edge descriptors;
+- `texture__`: compact GLCM descriptors;
 - `orient__`: structure-tensor coherence/orientation descriptors;
 - `curv__`: multiscale level-set curvature summaries.
-
-## Step 2 — ablation experiment
-
-```bash
-python scripts/run_ablation.py \
-  --train results/features_train_geometry.csv \
-  --test results/features_test_geometry.csv \
-  --output results/ablation_results.csv
-```
-
-The first benchmark uses the same fixed train/validation partition as the exploratory notebook and an RBF-SVM with standardized features. Macro-F1 uncertainty is estimated with a class-stratified bootstrap. The E6 versus E5 increment is evaluated with a paired class-stratified bootstrap, which preserves class support in every resample.
-
-The script writes:
-
-```text
-results/ablation_results.csv
-results/ablation_predictions.csv
-results/ablation_delta.csv
-```
-
-## Ablation study
-
-| Experiment | Features |
-|---|---|
-| E1 | Gradient and edge descriptors |
-| E2 | GLCM texture |
-| E3 | Multiscale curvature only |
-| E4 | Curvature + structure-tensor geometry |
-| E5 | Edge + texture baseline |
-| E6 | Edge + texture + curvature + orientation |
-
-The principal quantity is
-
-```text
-Delta macro-F1 = macro-F1(E6) - macro-F1(E5)
-```
-
-A positive point estimate is not sufficient by itself. The initial decision rule is:
-
-- **GO:** paired 95% bootstrap CI for Delta macro-F1 lies entirely above zero;
-- **BORDERLINE:** point estimate is positive but CI overlaps zero;
-- **PIVOT:** effect is negligible or negative.
-
-A GO result motivates the claim that geometry contributes information not already contained in the specified edge/texture baseline. A BORDERLINE or PIVOT result redirects the paper toward corpus-level geometric characterization, scale robustness, and within-artist/outlier analysis rather than improved artist classification.
 
 ## Repository structure
 
 ```text
 painting-geometry/
-├── painting_curvature_field.py      # original single-painting analysis (preserved)
+├── painting_curvature_field.py
 ├── notebooks/
-│   └── 01_corpus_ablation_colab.ipynb
+│   ├── 01_corpus_ablation_colab.ipynb
+│   └── 02_phase2_leakage_strong_baseline_colab.ipynb
 ├── scripts/
-│   ├── extract_corpus_features.py   # corpus-wide feature extraction
-│   └── run_ablation.py              # controlled feature-family comparison
+│   ├── extract_corpus_features.py
+│   ├── run_ablation.py
+│   ├── audit_near_duplicates.py
+│   ├── extract_strong_baseline_features.py
+│   └── run_phase2_experiments.py
 ├── src/
-│   ├── preprocessing.py             # image loading, BT.601 luminance, resolutions
-│   ├── curvature.py                 # multiscale level-set curvature
-│   ├── orientation.py               # structure tensor and orientation coherence
-│   ├── baselines.py                 # edge and GLCM baselines
-│   └── statistics.py                # Kruskal-Wallis, FDR, bootstrap, stability
+│   ├── preprocessing.py
+│   ├── curvature.py
+│   ├── orientation.py
+│   ├── baselines.py
+│   └── statistics.py
 ├── figures/
 ├── results/
 ├── requirements.txt
+├── .gitignore
 └── README.md
 ```
 
-## Immediate milestone
+## Interpretation rule
 
-Produce and inspect:
+A positive classification result is treated as evidence that the specified descriptors contain artist-discriminative information, not as evidence of emotion, intention, perception, authenticity, or causal artistic mechanisms. Psychological or affective claims are outside the scope of this computational analysis.
 
-```text
-experiment | n_features | accuracy | macro_f1 | 95% CI
-```
+## Next scientific stages
 
-and, separately:
-
-```text
-Delta Macro-F1 (E6-E5) | paired 95% CI | bootstrap proportion Delta <= 0
-```
-
-The next stages are resolution robustness, scale-specific ablation, artist-wise inferential statistics, and finally positioning *The Starry Night* within Van Gogh's corpus.
+If the Phase-II gain remains positive after leakage cleaning, stronger baselines, hyperparameter control, and matched dimensionality, the project proceeds to resolution robustness, scale-specific ablation, artist-wise effect-size analysis, and finally positioning *The Starry Night* within Van Gogh's corpus.
 
 ## Legacy analysis
 
