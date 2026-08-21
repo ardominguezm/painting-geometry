@@ -34,6 +34,12 @@ def merge_feature_tables(geometry: pd.DataFrame, strong: pd.DataFrame) -> pd.Dat
     return merged
 
 
+def _as_bool(series: pd.Series) -> pd.Series:
+    if pd.api.types.is_bool_dtype(series):
+        return series.fillna(False)
+    return series.astype(str).str.strip().str.lower().isin({'true', '1', 'yes', 'y'})
+
+
 def build_clean_mask(
     test_df: pd.DataFrame,
     candidates_path: Path | None,
@@ -48,8 +54,9 @@ def build_clean_mask(
     if candidates.empty:
         return mask, candidates
 
+    exact = _as_bool(candidates['exact_bytes'])
     flagged = candidates[
-        candidates['exact_bytes'].astype(bool)
+        exact
         | (
             (candidates['phash_distance'] <= phash_threshold)
             & (candidates['dhash_distance'] <= dhash_threshold)
@@ -281,15 +288,21 @@ def main(
             yy = y_test[mask]
             pp = pred[mask]
             for artist in np.unique(yy):
-                keep = yy == artist
+                class_f1 = f1_score(
+                    yy,
+                    pp,
+                    labels=[artist],
+                    average=None,
+                    zero_division=0,
+                )[0]
                 per_artist_rows.append({
                     'experiment': name,
                     'eval_set': eval_name,
                     'artist': artist,
-                    'n': int(keep.sum()),
-                    'f1': float(f1_score(yy[keep], pp[keep], average='micro', zero_division=0)),
+                    'n': int(np.sum(yy == artist)),
+                    'f1': float(class_f1),
                 })
-    pd.DataFrame(per_artist_rows).to_csv(output_dir / 'phase2_per_artist_recall.csv', index=False)
+    pd.DataFrame(per_artist_rows).to_csv(output_dir / 'phase2_per_artist_f1.csv', index=False)
 
     metadata = pd.DataFrame([{
         'n_train': len(train),
