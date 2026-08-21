@@ -24,14 +24,20 @@ from src.preprocessing import preprocess
 IMAGE_EXTS = {'.jpg', '.jpeg', '.png', '.tif', '.tiff', '.bmp'}
 
 
-def discover_images(root: Path):
+def discover_images(root: Path, max_per_artist: int | None = None):
     if not root.exists():
         raise FileNotFoundError(f'Corpus root does not exist: {root}')
+
     for artist_dir in sorted(p for p in root.iterdir() if p.is_dir()):
         artist = artist_dir.name
-        for path in sorted(artist_dir.rglob('*')):
-            if path.is_file() and path.suffix.lower() in IMAGE_EXTS:
-                yield artist, path
+        paths = [
+            path for path in sorted(artist_dir.rglob('*'))
+            if path.is_file() and path.suffix.lower() in IMAGE_EXTS
+        ]
+        if max_per_artist is not None:
+            paths = paths[:max_per_artist]
+        for path in paths:
+            yield artist, path
 
 
 def extract_one(path: Path, artist: str, long_side: int, sigmas: tuple[float, ...]):
@@ -59,19 +65,34 @@ def extract_one(path: Path, artist: str, long_side: int, sigmas: tuple[float, ..
     return row
 
 
-def run(root: Path, output: Path, long_side: int, sigmas: tuple[float, ...]):
-    items = list(discover_images(root))
+def run(
+    root: Path,
+    output: Path,
+    long_side: int,
+    sigmas: tuple[float, ...],
+    max_per_artist: int | None = None,
+):
+    items = list(discover_images(root, max_per_artist=max_per_artist))
     if not items:
         raise RuntimeError(f'No images found under {root}')
 
-    print(f'Corpus root: {root}')
-    print(f'Images discovered: {len(items)}')
-    print(f'Resolution (long side): {long_side}')
-    print(f'Curvature scales: {sigmas}')
+    print(f'Corpus root: {root}', flush=True)
+    print(f'Images discovered: {len(items)}', flush=True)
+    print(f'Resolution (long side): {long_side}', flush=True)
+    print(f'Curvature scales: {sigmas}', flush=True)
+    if max_per_artist is not None:
+        print(f'Pilot cap per artist: {max_per_artist}', flush=True)
 
     rows = []
     failures = []
-    for artist, path in tqdm(items, desc=f'Extracting {root.name}'):
+    progress = tqdm(
+        items,
+        desc=f'Extracting {root.name}',
+        file=sys.stdout,
+        dynamic_ncols=True,
+        mininterval=0.5,
+    )
+    for artist, path in progress:
         try:
             rows.append(extract_one(path, artist, long_side, sigmas))
         except Exception as exc:
@@ -82,9 +103,9 @@ def run(root: Path, output: Path, long_side: int, sigmas: tuple[float, ...]):
     if failures:
         fail_path = output.with_name(output.stem + '_failures.csv')
         pd.DataFrame(failures).to_csv(fail_path, index=False)
-        print(f'Warning: {len(failures)} failures written to {fail_path}')
+        print(f'Warning: {len(failures)} failures written to {fail_path}', flush=True)
         for failure in failures[:5]:
-            print('  sample failure:', failure)
+            print('  sample failure:', failure, flush=True)
 
     if not rows:
         raise RuntimeError(
@@ -95,8 +116,8 @@ def run(root: Path, output: Path, long_side: int, sigmas: tuple[float, ...]):
     df = pd.DataFrame(rows)
     df.to_csv(output, index=False)
 
-    print(f'Saved {len(df)} rows x {df.shape[1]} columns to {output}')
-    print('Artists:', sorted(df['artist'].unique().tolist()))
+    print(f'Saved {len(df)} rows x {df.shape[1]} columns to {output}', flush=True)
+    print('Artists:', sorted(df['artist'].unique().tolist()), flush=True)
 
 
 if __name__ == '__main__':
@@ -105,6 +126,18 @@ if __name__ == '__main__':
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--long-side', type=int, default=512)
     parser.add_argument('--sigmas', type=float, nargs='+', default=[1.0, 2.0, 4.0, 8.0])
+    parser.add_argument(
+        '--max-per-artist',
+        type=int,
+        default=None,
+        help='Optional pilot cap on images per artist. Omit for the full corpus.',
+    )
     args = parser.parse_args()
 
-    run(args.root, args.output, args.long_side, tuple(args.sigmas))
+    run(
+        args.root,
+        args.output,
+        args.long_side,
+        tuple(args.sigmas),
+        max_per_artist=args.max_per_artist,
+    )
