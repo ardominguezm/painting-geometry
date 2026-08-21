@@ -97,6 +97,12 @@ def find_cross_split_candidates(
     dhash_threshold: int = 6,
     chunk_size: int = 100,
 ) -> pd.DataFrame:
+    """Return a permissive candidate list for visual/manual audit.
+
+    A pair is retained when either pHash OR dHash is within its screening
+    threshold. Automatic exclusion is deliberately more conservative and is
+    performed later using both distances simultaneously.
+    """
     tr = train_df.dropna(subset=['phash_u64', 'dhash_u64']).reset_index(drop=True)
     te = test_df.dropna(subset=['phash_u64', 'dhash_u64']).reset_index(drop=True)
     train_ph = tr['phash_u64'].astype('uint64').to_numpy()
@@ -109,7 +115,7 @@ def find_cross_split_candidates(
         test_dh = block['dhash_u64'].astype('uint64').to_numpy()
         pdist = hamming_matrix(test_ph, train_ph)
         ddist = hamming_matrix(test_dh, train_dh)
-        ii, jj = np.where((pdist <= phash_threshold) & (ddist <= dhash_threshold))
+        ii, jj = np.where((pdist <= phash_threshold) | (ddist <= dhash_threshold))
         for i_local, j in zip(ii, jj):
             test_row = block.iloc[int(i_local)]
             train_row = tr.iloc[int(j)]
@@ -191,11 +197,12 @@ def main(train_root: Path, test_root: Path, output_dir: Path, phash_threshold: i
     summary = pd.DataFrame([{
         'train_images': len(train_hashes),
         'test_images': len(test_hashes),
-        'candidate_pairs': len(candidates),
-        'test_images_flagged': n_test_flagged,
+        'candidate_pairs_screened': len(candidates),
+        'test_images_with_any_candidate': n_test_flagged,
         'exact_byte_pairs': exact,
-        'phash_threshold': phash_threshold,
-        'dhash_threshold': dhash_threshold,
+        'screen_phash_threshold': phash_threshold,
+        'screen_dhash_threshold': dhash_threshold,
+        'screen_rule': 'phash<=threshold OR dhash<=threshold',
     }])
     summary.to_csv(output_dir / 'leakage_audit_summary.csv', index=False)
     print(summary.to_string(index=False))
