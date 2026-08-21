@@ -11,6 +11,8 @@ results/strong_baseline_test.csv
 results/*_failures.csv
 results/phase2_leakage/train_hashes.csv
 results/phase2_leakage/test_hashes.csv
+results/phase3_resolution/resolution_features_v2.csv
+painting_geometry_*_results.zip
 
 # Local datasets and environments
 data/
