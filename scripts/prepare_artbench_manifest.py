@@ -16,6 +16,22 @@ def norm_token(x: str) -> str:
     return s.strip("_")
 
 
+def clean_artist_value(x) -> str:
+    if pd.isna(x):
+        return ""
+    s = str(x).strip()
+    if norm_token(s) in {"", "nan", "none", "null", "unknown", "anonymous", "anon"}:
+        return ""
+    return s
+
+
+def clean_text_value(x) -> str:
+    if pd.isna(x):
+        return ""
+    s = str(x).strip()
+    return "" if norm_token(s) in {"", "nan", "none", "null"} else s
+
+
 def candidate_split_roots(root: Path, split: str) -> list[Path]:
     out = []
     for p in root.rglob(split):
@@ -113,11 +129,7 @@ def add_metadata(manifest: pd.DataFrame, meta: pd.DataFrame, cols: dict[str, str
         by_base.setdefault(row["_meta_basename_norm"], []).append(idx)
         by_stem.setdefault(row["_meta_stem_norm"], []).append(idx)
 
-    artists = []
-    sources = []
-    matched = []
-    meta_indices = []
-    ambiguous = []
+    artists, sources, matched, meta_indices, ambiguous = [], [], [], [], []
 
     for rec in manifest.itertuples(index=False):
         key_base = norm_token(rec.filename)
@@ -131,20 +143,13 @@ def add_metadata(manifest: pd.DataFrame, meta: pd.DataFrame, cols: dict[str, str
             if style_matches:
                 cand = style_matches
 
-        if len(cand) == 1:
+        if len(cand) >= 1:
             i = cand[0]
-            artists.append(str(m.at[i, cols["artist"]]))
-            sources.append(str(m.at[i, cols["source"]]) if cols["source"] else "")
+            artists.append(clean_artist_value(m.at[i, cols["artist"]]))
+            sources.append(clean_text_value(m.at[i, cols["source"]]) if cols["source"] else "")
             matched.append(True)
             meta_indices.append(i)
-            ambiguous.append(False)
-        elif len(cand) > 1:
-            i = cand[0]
-            artists.append(str(m.at[i, cols["artist"]]))
-            sources.append(str(m.at[i, cols["source"]]) if cols["source"] else "")
-            matched.append(True)
-            meta_indices.append(i)
-            ambiguous.append(True)
+            ambiguous.append(len(cand) > 1)
         else:
             artists.append("")
             sources.append("")
@@ -178,14 +183,15 @@ def main(dataset_root: Path, metadata_csv: Path | None, output: Path):
         print("\nMetadata columns:", cols)
         manifest = add_metadata(manifest, meta, cols)
         rate = float(manifest["metadata_match"].mean())
-        print(f"Metadata match rate: {rate:.3%}")
-        if "artist" in manifest:
-            print("Unique matched artists:", manifest.loc[manifest["metadata_match"], "artist"].nunique())
-            overlap = set(manifest.loc[manifest["split"] == "train", "artist"]) & set(
-                manifest.loc[manifest["split"] == "test", "artist"]
-            )
-            overlap.discard("")
-            print("Artist overlap across official train/test:", len(overlap))
+        artist_rate = float(manifest["artist"].astype(str).str.strip().ne("").mean())
+        print(f"Metadata filename match rate: {rate:.3%}")
+        print(f"Usable artist coverage: {artist_rate:.3%}")
+        print("Unique usable artists:", manifest.loc[manifest["artist"].astype(str).str.strip().ne(""), "artist"].nunique())
+        overlap = set(manifest.loc[manifest["split"] == "train", "artist"]) & set(
+            manifest.loc[manifest["split"] == "test", "artist"]
+        )
+        overlap.discard("")
+        print("Artist overlap across official train/test:", len(overlap))
     else:
         manifest["artist"] = ""
         manifest["source"] = ""
