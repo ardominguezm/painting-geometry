@@ -12,6 +12,8 @@ from tqdm.auto import tqdm
 
 HF_DATASET = "zguo0525/ArtBench"
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"}
+MIN_LINKAGE_COVERAGE = 0.995
+MIN_UNIQUE_RATE = 0.999
 
 
 def norm_token(x: str) -> str:
@@ -104,10 +106,11 @@ def raw_path_name(raw_image) -> str:
 
 
 def recover_names_from_hf_embedded_paths(ds, raw_ds, label_names, meta, cols, audit_rows):
-    """Use filenames embedded in the HF Image parquet field if they were preserved.
+    """Recover metadata-linked filenames from paths embedded in the HF parquet Image field.
 
-    Every path is matched against ArtBench-10.csv within the same split and style. We accept this
-    linkage only with >=99.5% coverage in both splits and essentially unique recovered names.
+    The linkage is accepted only if each split has >=99.5% metadata coverage and essentially unique
+    recovered names. A very small unlinked remainder is retained for style-only analyses, but is
+    explicitly excluded from artist-dependent analyses because the later manifest assigns it no artist.
     """
     by_base, by_stem = metadata_lookup(meta, cols)
     assignments: dict[str, dict[int, str]] = {}
@@ -149,9 +152,11 @@ def recover_names_from_hf_embedded_paths(ds, raw_ds, label_names, meta, cols, au
         coverage = len(assn) / n
         unique_names = len(set(Path(v).name for v in assn.values()))
         unique_rate = unique_names / max(len(assn), 1)
+        n_unlinked = n - len(assn)
         print(
             f"HF embedded-path audit {split}: paths={n_with_path}/{n}, matched={len(assn)}/{n} "
-            f"({coverage:.3%}), exact={n_exact}, stem={n_stem}, ambiguous={n_amb}, unique={unique_rate:.3%}"
+            f"({coverage:.3%}), exact={n_exact}, stem={n_stem}, ambiguous={n_amb}, "
+            f"unlinked={n_unlinked}, unique={unique_rate:.3%}"
         )
         print("  path examples:", examples)
         audit_rows.append({
@@ -160,19 +165,24 @@ def recover_names_from_hf_embedded_paths(ds, raw_ds, label_names, meta, cols, au
             "n": n,
             "n_with_path": n_with_path,
             "n_matched": len(assn),
+            "n_unlinked": n_unlinked,
             "coverage": coverage,
             "unique_rate": unique_rate,
             "n_exact": n_exact,
             "n_stem": n_stem,
             "n_ambiguous": n_amb,
         })
-        if not (coverage >= 0.995 and unique_rate >= 0.999):
+        if not (coverage >= MIN_LINKAGE_COVERAGE and unique_rate >= MIN_UNIQUE_RATE):
             all_ok = False
         assignments[split] = assn
 
     if not all_ok:
         return None
-    print("Validated direct HF embedded-filename linkage ✓")
+    total_matched = sum(len(v) for v in assignments.values())
+    print(
+        "Validated direct HF embedded-filename linkage ✓ "
+        f"({total_matched}/60000 metadata-linked; {60000-total_matched} retained style-only)"
+    )
     return assignments
 
 
@@ -183,19 +193,48 @@ def pil_rgb(x) -> Image.Image:
 
 
 def materialize(ds, raw_ds, label_names, assignments, output_root: Path, audit_csv: Path):
+    """Materialize all 60k images.
+
+    Metadata-linked rows use the exact ArtBench filename. The tiny unlinked remainder receives a
+    synthetic filename beginning ``__hf_unlinked__`` so prepare_artbench_manifest.py cannot attach an
+    uncertain artist accidentally. Those images remain valid for style/corpus analyses.
+    """
     output_root.mkdir(parents=True, exist_ok=True)
     rows = []
+    unlinked_rows = []
 
     for split in ["train", "test"]:
         labels = np.asarray(ds[split]["label"], dtype=int)
-        if len(assignments[split]) != len(ds[split]):
-            raise RuntimeError(f"Incomplete assignment for {split}: {len(assignments[split])}/{len(ds[split])}")
+        n_linked = len(assignments[split])
+        print(
+            f"Materialization policy {split}: {n_linked}/{len(ds[split])} metadata-linked; "
+            f"{len(ds[split])-n_linked} unlinked rows retained for style-only analyses."
+        )
 
         for i in tqdm(range(len(ds[split])), desc=f"Materialize HF 256 {split}", dynamic_ncols=True):
             style = label_names[int(labels[i])]
-            official_fn = Path(assignments[split][i]).name
             raw = raw_ds[split][i]["image"]
-            target = output_root / split / style / official_fn
+            embedded_fn = raw_path_name(raw)
+            linked = i in assignments[split]
+
+            if linked:
+                official_fn = Path(assignments[split][i]).name
+                target_name = official_fn
+            else:
+                official_fn = ""
+                suffix = Path(embedded_fn).suffix.lower()
+                if suffix not in IMAGE_EXTS:
+                    suffix = ".jpg"
+                target_name = f"__hf_unlinked__{split}_{i:05d}{suffix}"
+                unlinked_rows.append({
+                    "split": split,
+                    "style": style,
+                    "hf_index": i,
+                    "embedded_filename": embedded_fn,
+                    "synthetic_filename": target_name,
+                })
+
+            target = output_root / split / style / target_name
             target.parent.mkdir(parents=True, exist_ok=True)
 
             if isinstance(raw, dict) and raw.get("bytes"):
@@ -214,7 +253,9 @@ def materialize(ds, raw_ds, label_names, assignments, output_root: Path, audit_c
             rows.append({
                 "split": split,
                 "style": style,
+                "metadata_linked": linked,
                 "official_filename": official_fn,
+                "embedded_filename": embedded_fn,
                 "physical_filename": physical.name,
                 "path": str(physical),
             })
@@ -222,9 +263,20 @@ def materialize(ds, raw_ds, label_names, assignments, output_root: Path, audit_c
     mat = pd.DataFrame(rows)
     if len(mat) != 60000:
         raise RuntimeError(f"Materialized {len(mat)} rows, expected 60000")
-    mat.to_csv(audit_csv.with_name("hf256_materialization_manifest.csv"), index=False)
+    if int(mat["metadata_linked"].sum()) < int(MIN_LINKAGE_COVERAGE * len(mat)):
+        raise RuntimeError("Materialized metadata linkage fell below the pre-specified 99.5% guardrail")
+
+    mat_path = audit_csv.with_name("hf256_materialization_manifest.csv")
+    mat.to_csv(mat_path, index=False)
+    unlinked_path = audit_csv.with_name("hf256_unlinked_rows.csv")
+    pd.DataFrame(unlinked_rows).to_csv(unlinked_path, index=False)
+
     print("HF 256 ImageFolder ready ✓", output_root)
     print("Rows:", len(mat))
+    print("Metadata-linked rows:", int(mat["metadata_linked"].sum()))
+    print("Style-only unlinked rows:", int((~mat["metadata_linked"]).sum()))
+    print("Materialization manifest ->", mat_path)
+    print("Unlinked-row audit ->", unlinked_path)
 
 
 def main(kaggle_root: Path, output_root: Path, audit_csv: Path):
@@ -264,11 +316,8 @@ def main(kaggle_root: Path, output_root: Path, audit_csv: Path):
     if assignments is None:
         raise RuntimeError(
             "The Hugging Face 256px parquet does not preserve enough original ArtBench filenames to "
-            "link the 60,000 images to artist metadata exactly. The independent CIFAR-row-order test "
-            "already failed at chance level (~10% style agreement). We therefore stop rather than "
-            "fabricate artist identities. The scientifically defensible fallback is to use all 60,000 "
-            "for style/corpus-level analyses and retain the existing metadata-linked 4,000-image sample "
-            "for artist-disjoint generalisation."
+            "link images to artist metadata with the pre-specified guardrails. Stopping rather than "
+            "fabricate artist identities."
         )
 
     materialize(ds, raw_ds, label_names, assignments, output_root, audit_csv)
