@@ -5,9 +5,33 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pandas as pd
+
 import run_phase7_full_pipeline as base
 
 KAGGLE_HANDLE = "alexanderliao/artbench10"
+
+
+def _install_dataframe_style_column_compat() -> None:
+    """Resolve the pandas DataFrame.style namespace collision inside the legacy Phase VII driver.
+
+    The Phase VII driver predates pandas' Styler collision becoming visible in this code path and
+    accesses a column named ``style`` via attribute syntax (e.g. ``manifest.style``). In pandas,
+    ``DataFrame.style`` is a built-in property returning a Styler object, so attribute access does
+    not resolve to the column. For this launcher process only, return the ``style`` Series whenever
+    such a column exists; preserve the normal Styler property for all other DataFrames.
+
+    Downstream standalone scripts are fixed separately to use bracket notation explicitly.
+    """
+    original_style_property = pd.DataFrame.style
+
+    def _style_or_column(self):
+        if "style" in self.columns:
+            return self["style"]
+        return original_style_property.__get__(self, type(self))
+
+    pd.DataFrame.style = property(_style_or_column)
+    print("Pandas compatibility patch ✓ DataFrame.style resolves the 'style' column in Phase VII")
 
 
 def hf256_resources(cache_dir: Path, data_dir: Path, extract_dir: Path):
@@ -67,6 +91,7 @@ def hf256_resources(cache_dir: Path, data_dir: Path, extract_dir: Path):
 
 
 def main(args):
+    _install_dataframe_style_column_compat()
     base.obtain_artbench_resources = hf256_resources
     base.main(args)
 
