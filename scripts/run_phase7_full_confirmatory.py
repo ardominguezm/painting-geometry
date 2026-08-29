@@ -58,8 +58,8 @@ def boot(y,a,b,g,n=5000,seed=42):
     return obs,lo,hi,p
 
 def run(df,label,out,outer=5,inner=3,nboot=5000):
-    d=df.copy(); d['artist']=d.artist.fillna('').astype(str).str.strip(); d=d[d.artist.ne('')].reset_index(drop=True)
-    y=d.style.astype(str).to_numpy(); g=d.artist.to_numpy(); R=reps(d)
+    d=df.copy(); d['artist']=d['artist'].fillna('').astype(str).str.strip(); d=d[d['artist'].ne('')].reset_index(drop=True)
+    y=d['style'].astype(str).to_numpy(); g=d['artist'].to_numpy(); R=reps(d)
     sp=StratifiedGroupKFold(n_splits=outer,shuffle=True,random_state=20260829)
     splits=list(sp.split(np.zeros((len(d),1)),y,groups=g))
     preds=d[['split','style','artist','filename']].copy(); rows=[]; fr=[]
@@ -70,7 +70,7 @@ def run(df,label,out,outer=5,inner=3,nboot=5000):
             fr.append(dict(dataset=label,representation=name,fold=k,C=C,n_train=len(tr),n_test=len(te),
                            macro_f1=f1_score(y[te],p,average='macro'),accuracy=accuracy_score(y[te],p),inner_search=json.dumps(search)))
         preds['pred__'+name]=P.astype(str); preds['outer_fold']=F
-        rows.append(dict(dataset=label,representation=name,n_features=len(cols),n_images=len(d),n_artists=d.artist.nunique(),
+        rows.append(dict(dataset=label,representation=name,n_features=len(cols),n_images=len(d),n_artists=d['artist'].nunique(),
                          macro_f1=f1_score(y,P.astype(str),average='macro'),accuracy=accuracy_score(y,P.astype(str))))
     out.mkdir(parents=True,exist_ok=True); res=pd.DataFrame(rows)
     res.to_csv(out/'linear_probe_results.csv',index=False); pd.DataFrame(fr).to_csv(out/'linear_probe_fold_results.csv',index=False)
@@ -83,15 +83,15 @@ def run(df,label,out,outer=5,inner=3,nboot=5000):
             z=boot(y,preds['pred__'+a].to_numpy(),preds['pred__'+b].to_numpy(),g,nboot,42+i)
             dr.append(dict(dataset=label,hypothesis=h,new_model=a,reference=b,delta_macro_f1=z[0],ci_low=z[1],ci_high=z[2],p_one_sided=z[3],n_boot=nboot))
     D=pd.DataFrame(dr)
-    if len(D): D['q_bh']=bh(D.p_one_sided.to_numpy())
+    if len(D): D['q_bh']=bh(D['p_one_sided'].to_numpy())
     D.to_csv(out/'confirmatory_deltas.csv',index=False)
     scale=['K_s1','K_s2','K_s4','K_s8','K_fine_s1_s2','K_coarse_s4_s8','K_all']
-    res[res.representation.isin(scale)].to_csv(out/'scale_probe_results.csv',index=False)
+    res[res['representation'].isin(scale)].to_csv(out/'scale_probe_results.csv',index=False)
     return res,D
 
 def main(inp,out,outer,inner,nboot):
     df=pd.read_csv(inp); allr=[]; alld=[]
-    for d,l in [(df,'artbench10_all'),(df[~df.style.astype(str).isin(EXCLUDE)].copy(),'artbench10_wikiart8')]:
+    for d,l in [(df,'artbench10_all'),(df[~df['style'].astype(str).isin(EXCLUDE)].copy(),'artbench10_wikiart8')]:
         r,z=run(d,l,out/l,outer,inner,nboot); allr.append(r); alld.append(z)
     pd.concat(allr).to_csv(out/'phase7_confirmatory_results_all.csv',index=False)
     pd.concat(alld).to_csv(out/'phase7_confirmatory_deltas_all.csv',index=False)
