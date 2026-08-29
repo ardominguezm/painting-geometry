@@ -14,15 +14,16 @@ def hf256_resources(cache_dir: Path, data_dir: Path, extract_dir: Path):
     """
     Phase-VII acquisition override.
 
-    The official ArtBench server currently returns HTTP 403 to Colab and the Kaggle mirror
-    contains only the CIFAR-style 32x32 distribution. We therefore use:
-      - Kaggle ArtBench-10.csv + official 32x32 Python batches for filenames/artist linkage;
+    The official ArtBench server currently returns HTTP 403 to Colab and the Kaggle mirror exposes
+    the metadata plus 32x32 distributions, but not the 256x256 ImageFolder. We therefore use:
+      - ArtBench-10.csv from the Kaggle mirror for artist/style/split metadata;
       - zguo0525/ArtBench on Hugging Face for the full 60,000 256x256 images.
 
-    prepare_artbench_hf256.py validates the recovered filename ordering against image content
-    before any artist metadata are attached. If that validation fails, the run stops.
+    prepare_artbench_hf256.py validates the filenames embedded directly in the Hugging Face Image
+    field against ArtBench-10.csv within the same split and style. Metadata-linked rows are used for
+    artist-dependent analyses; the tiny unmatched remainder is retained only for style/corpus-level
+    analyses. No uncertain artist identity is imputed.
     """
-    # Reuse a materialized 256px tree if the current runtime already has one.
     hf_root = data_dir / "hf256_imagefolder"
     try:
         image_root = base.locate_imagefolder_root(hf_root)
@@ -35,9 +36,9 @@ def hf256_resources(cache_dir: Path, data_dir: Path, extract_dir: Path):
     try:
         import kagglehub
     except ImportError as exc:
-        raise ImportError("kagglehub is required for ArtBench metadata/32px validation") from exc
+        raise ImportError("kagglehub is required for ArtBench metadata") from exc
 
-    print("Attaching Kaggle ArtBench mirror for metadata + 32px validation:", KAGGLE_HANDLE)
+    print("Attaching Kaggle ArtBench mirror for metadata:", KAGGLE_HANDLE)
     kaggle_root = Path(kagglehub.dataset_download(KAGGLE_HANDLE))
     print("Kaggle dataset root:", kaggle_root)
     if not kaggle_root.exists():
@@ -57,12 +58,12 @@ def hf256_resources(cache_dir: Path, data_dir: Path, extract_dir: Path):
         "--audit-csv",
         str(audit_csv),
     ]
-    print("Preparing validated full 256px ArtBench from Hugging Face...")
+    print("Preparing full 256px ArtBench from Hugging Face with direct filename audit...")
     subprocess.run(cmd, check=True)
 
     image_root = base.locate_imagefolder_root(hf_root)
     print("Validated HF 256px ArtBench ready ✓", image_root)
-    return image_root, metadata, "huggingface_zguo0525_256_validated_against_official_32px"
+    return image_root, metadata, "huggingface_zguo0525_256_direct_filename_validated"
 
 
 def main(args):
