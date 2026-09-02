@@ -153,8 +153,11 @@ def figure3(res: pd.DataFrame, outdir: Path):
 
 
 def figure4(p5: pd.DataFrame, outdir: Path):
-    # Slightly taller canvas and a figure-level legend keep the bar legend clear of the data.
-    fig, axes = plt.subplots(2,2, figsize=(13.7,9.35), constrained_layout=True)
+    # Reserve a dedicated lower band for the shared legend.  A figure-level
+    # legend outside constrained_layout can otherwise overlap the sigma tick labels.
+    fig, axes = plt.subplots(2,2, figsize=(13.7,9.7), constrained_layout=False)
+    fig.subplots_adjust(left=0.075, right=0.985, bottom=0.14, top=0.91,
+                        hspace=0.22, wspace=0.16)
     for lab,ax in zip('abcd', axes.ravel()): panel(ax, lab)
     sigmas=[1.0,2.0,4.0,8.0]; xl=['σ = 1','σ = 2','σ = 4','σ = 8']; x=np.arange(4)
     for ds in ['artbench10_all','artbench10_wikiart8']:
@@ -180,16 +183,16 @@ def figure4(p5: pd.DataFrame, outdir: Path):
         ax.set_title(f"Variance decomposition — {DATASET_LABELS[ds]}",loc='left',fontweight='bold')
         grid_y(ax)
 
-    # Shared legend placed outside the plotting region to avoid covering bars/text.
+    # Shared legend centred inside its own reserved band below both lower axes.
     variance_handles = [
         Patch(facecolor=COLORS['style'], edgecolor='black', linewidth=.4, label='Style'),
         Patch(facecolor=COLORS['artist'], edgecolor='black', linewidth=.4, label='Artist within style'),
         Patch(facecolor=COLORS['residual'], edgecolor='black', linewidth=.4, label='Residual / painting-level'),
     ]
-    fig.legend(handles=variance_handles, loc='lower center', bbox_to_anchor=(0.5, -0.01),
+    fig.legend(handles=variance_handles, loc='lower center', bbox_to_anchor=(0.5, 0.025),
                ncol=3, frameon=False, columnspacing=2.0, handlelength=1.8)
 
-    fig.suptitle('Style organisation in multiscale geometric space', x=0.02, y=1.02,
+    fig.suptitle('Style organisation in multiscale geometric space', x=0.02, y=0.975,
                  ha='left', fontsize=16, fontweight='bold')
     save(fig,outdir,'Figure4_style_organisation_hssc')
     plt.close(fig)
