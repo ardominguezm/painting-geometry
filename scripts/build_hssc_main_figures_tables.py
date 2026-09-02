@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib import gridspec
+from matplotlib.patches import Patch
 
 
 COLORS = {
@@ -18,7 +19,7 @@ COLORS = {
     'style': '#4c78a8', 'artist': '#f58518', 'residual': '#bdbdbd',
 }
 DATASET_LABELS = {
-    'artbench10_all': 'ArtBench-10 (All10)',
+    'artbench10_all': 'ArtBench-10',
     'artbench10_wikiart8': 'WikiArt-8 control',
 }
 REP_LABELS = {
@@ -152,7 +153,8 @@ def figure3(res: pd.DataFrame, outdir: Path):
 
 
 def figure4(p5: pd.DataFrame, outdir: Path):
-    fig, axes = plt.subplots(2,2, figsize=(13.7,9.0), constrained_layout=True)
+    # Slightly taller canvas and a figure-level legend keep the bar legend clear of the data.
+    fig, axes = plt.subplots(2,2, figsize=(13.7,9.35), constrained_layout=True)
     for lab,ax in zip('abcd', axes.ravel()): panel(ax, lab)
     sigmas=[1.0,2.0,4.0,8.0]; xl=['σ = 1','σ = 2','σ = 4','σ = 8']; x=np.arange(4)
     for ds in ['artbench10_all','artbench10_wikiart8']:
@@ -164,7 +166,8 @@ def figure4(p5: pd.DataFrame, outdir: Path):
     axes[0,1].set_ylabel('Style share of between-artist variation')
     axes[0,0].set_title('Style organisation peaks at intermediate scale',loc='left',fontweight='bold')
     axes[0,1].set_title('Style is a modest component of artist geometry',loc='left',fontweight='bold')
-    for ax in axes[0]: ax.set_xticks(x); ax.set_xticklabels(xl); ax.legend(frameon=False); grid_y(ax)
+    for ax in axes[0]:
+        ax.set_xticks(x); ax.set_xticklabels(xl); ax.legend(frameon=False); grid_y(ax)
 
     for col,ds in enumerate(['artbench10_all','artbench10_wikiart8']):
         ax=axes[1,col]
@@ -176,7 +179,16 @@ def figure4(p5: pd.DataFrame, outdir: Path):
         ax.set_xticks(x); ax.set_xticklabels(xl); ax.set_ylim(0,1.03); ax.set_ylabel('Fraction of geometric variation')
         ax.set_title(f"Variance decomposition — {DATASET_LABELS[ds]}",loc='left',fontweight='bold')
         grid_y(ax)
-        if col==0: ax.legend(frameon=False,loc='upper right')
+
+    # Shared legend placed outside the plotting region to avoid covering bars/text.
+    variance_handles = [
+        Patch(facecolor=COLORS['style'], edgecolor='black', linewidth=.4, label='Style'),
+        Patch(facecolor=COLORS['artist'], edgecolor='black', linewidth=.4, label='Artist within style'),
+        Patch(facecolor=COLORS['residual'], edgecolor='black', linewidth=.4, label='Residual / painting-level'),
+    ]
+    fig.legend(handles=variance_handles, loc='lower center', bbox_to_anchor=(0.5, -0.01),
+               ncol=3, frameon=False, columnspacing=2.0, handlelength=1.8)
+
     fig.suptitle('Style organisation in multiscale geometric space', x=0.02, y=1.02,
                  ha='left', fontsize=16, fontweight='bold')
     save(fig,outdir,'Figure4_style_organisation_hssc')
@@ -190,7 +202,7 @@ def tables(res: pd.DataFrame, delt: pd.DataFrame, features_path: Path, outdir: P
     linked = feat.artist.ne('')
     w8 = ~feat['style'].astype(str).isin(['surrealism','ukiyo_e'])
     t1 = pd.DataFrame([
-        ['ArtBench-10 (All10)', int(feat.style.nunique()), len(feat), int(linked.sum()), int(feat.loc[linked,'artist'].nunique()), 'Artist-disjoint 5-fold', 'Primary confirmatory corpus'],
+        ['ArtBench-10', int(feat.style.nunique()), len(feat), int(linked.sum()), int(feat.loc[linked,'artist'].nunique()), 'Artist-disjoint 5-fold', 'Primary confirmatory corpus'],
         ['WikiArt-8 control', int(feat.loc[w8,'style'].nunique()), int(w8.sum()), int((linked&w8).sum()), int(feat.loc[linked&w8,'artist'].nunique()), 'Artist-disjoint 5-fold', 'Source-composition sensitivity'],
     ], columns=['Dataset','Styles','Images','Artist-linked images','Artists','Protocol','Role'])
     t1.to_csv(outdir/'Table1_dataset_protocol_summary.csv',index=False)
