@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+
+# Recomputable large/intermediate analysis products
+results/features_train_multiscale.csv
+results/features_test_multiscale.csv
+results/strong_baseline_train.csv
+results/strong_baseline_test.csv
+results/*_failures.csv
+results/phase2_leakage/train_hashes.csv
+results/phase2_leakage/test_hashes.csv
+results/phase3_resolution/resolution_features_v2.csv
+results/phase4_artbench/artbench_manifest.csv
+results/phase4_artbench/artbench_pilot_features.csv
+results/phase4_artbench/artbench_pilot_features_failures.csv
+results/phase5_style_geometry/
+painting_geometry_*_results.zip
+painting_geometry_phase4_artbench_pilot.zip
+painting_geometry_phase5_style_geometry.zip
+
+# Local datasets and environments
+data/
+artbench_data/
+.venv/
+venv/
